@@ -1,6 +1,9 @@
 use esp_idf_svc::{eventloop::EspSystemEventLoop, hal::prelude::Peripherals, nvs::EspDefaultNvsPartition, sys::EspError, wifi::{self, AccessPointConfiguration, BlockingWifi, ClientConfiguration, EspWifi, WifiDeviceId, WifiDriver, WifiFrame}};
 use log::info;
 
+const WIFI_SSID: &str = env!("WIFI_SSID");
+const WIFI_PASSWORD: &str = env!("WIFI_PASS");
+
 fn main() -> anyhow::Result<()> {
     // It is necessary to call this function once. Otherwise some patches to the runtime
     // implemented by esp-idf-sys might not link properly. See https://github.com/esp-rs/esp-idf-template/issues/71
@@ -16,10 +19,10 @@ fn main() -> anyhow::Result<()> {
     let nvs = EspDefaultNvsPartition::take()?;
 
     let wifi_client_config = ClientConfiguration{
-        ssid: SSID.try_into().unwrap(),
+        ssid: WIFI_SSID.try_into().unwrap(),
         bssid: None,
         auth_method: wifi::AuthMethod::WAPIPersonal,
-        password: PASSWORD.try_into().unwrap(),
+        password: WIFI_PASSWORD.try_into().unwrap(),
         channel: None,
         ..Default::default()
     };
@@ -47,12 +50,6 @@ fn main() -> anyhow::Result<()> {
         Ok(())
     };
     let tx_callback = |wifi_device_id: WifiDeviceId, _data: &[u8], _status: bool| {
-        match wifi_device_id {
-            WifiDeviceId::Ap | WifiDeviceId::Sta => {
-                // Only log if needed for debugging
-                // info!("TX from {:?}", wifi_device_id);
-            }
-        }
     };
 
     wifi_driver.set_callbacks(rx_callback, tx_callback)?;
@@ -75,13 +72,14 @@ fn main() -> anyhow::Result<()> {
 
     // Run for 30 seconds then exit
     let start = std::time::Instant::now();
-    let duration = std::time::Duration::from_secs(30);
+    let duration_u64: u64 = 3000;
+    let duration = std::time::Duration::from_secs(duration_u64);
     while start.elapsed() < duration {
         std::thread::sleep(std::time::Duration::from_secs(1));
-        info!("Time remaining: {} seconds", 30 - start.elapsed().as_secs());
+        info!("Time remaining: {} seconds", duration_u64 - start.elapsed().as_secs());
     }
 
-    info!("30 seconds elapsed, exiting...");
+    info!("{} seconds elapsed, exiting...", duration_u64);
 
     Ok(())
 }
