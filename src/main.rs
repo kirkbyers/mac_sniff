@@ -1,4 +1,13 @@
-use esp_idf_svc::{eventloop::EspSystemEventLoop, hal::{delay::FreeRtos, prelude::Peripherals}, nvs::EspDefaultNvsPartition, sys::{esp_wifi_set_mode, esp_wifi_set_promiscuous_filter, esp_wifi_set_promiscuous_rx_cb, wifi_mode_t_WIFI_MODE_NULL, wifi_promiscuous_filter_t, WIFI_PROMIS_FILTER_MASK_ALL}, wifi::{self, ClientConfiguration, WifiDriver}};
+mod display;
+
+use display::Display;
+use esp_idf_svc::{
+    eventloop::EspSystemEventLoop, 
+    hal::{delay::FreeRtos, gpio::{InputPin, OutputPin}, i2c::{I2c, I2cConfig, I2cDriver}, peripheral::Peripheral, prelude::{Peripherals, FromValueType}}, 
+    nvs::EspDefaultNvsPartition, 
+    sys::{esp_wifi_set_mode, esp_wifi_set_promiscuous_filter, esp_wifi_set_promiscuous_rx_cb, i2c_trans_mode_t_I2C_DATA_MODE_LSB_FIRST, wifi_mode_t_WIFI_MODE_NULL, wifi_promiscuous_filter_t, WIFI_PROMIS_FILTER_MASK_ALL},
+    wifi::{self, ClientConfiguration, WifiDriver}
+};
 use log::info;
 
 const DURRATION_U64: u64 = 30;
@@ -16,6 +25,23 @@ fn main() -> anyhow::Result<()> {
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
+
+    info!("Setting up I2C for display");
+    let i2c = setup_i2c(peripherals.i2c0, peripherals.pins.gpio4, peripherals.pins.gpio15)?;
+    
+    // Initialize display
+    info!("Initializing display");
+    let mut display = Display::new(i2c)?;
+    
+    // Clear display
+    display.clear()?;
+    
+    // Draw demo content
+    display.draw_text(10, 10, "Hello from Rust!", true)?;
+    display.draw_text(10, 25, "Detecting WiFi...", true)?;
+    
+    // Update display
+    display.flush()?;
 
     let basic_client_config = ClientConfiguration {
         ssid: "".try_into().unwrap(),
@@ -96,4 +122,14 @@ fn main() -> anyhow::Result<()> {
     info!("{} seconds elapsed, exiting...", DURRATION_U64);
 
     Ok(())
+}
+
+fn setup_i2c(i2c: impl Peripheral<P = impl I2c> + 'static, 
+             sda: impl Peripheral<P = impl OutputPin + InputPin> + 'static,
+             scl: impl Peripheral<P = impl OutputPin + InputPin> + 'static) -> anyhow::Result<I2cDriver<'static>> {
+    
+    let config = I2cConfig::new().baudrate(400.kHz().into());
+    let i2c = I2cDriver::new(i2c, sda, scl, &config)?;
+    
+    Ok(i2c)
 }

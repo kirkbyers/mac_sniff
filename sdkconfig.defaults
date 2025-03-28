@@ -5,6 +5,15 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8000
 # This allows to use 1 ms granularity for thread sleeps (10 ms by default).
 #CONFIG_FREERTOS_HZ=1000
 
+# Size optimizations
+CONFIG_ESP_SYSTEM_PANIC_SILENT_REBOOT=y
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+
 # Workaround for https://github.com/espressif/esp-idf/issues/7631
 #CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
 #CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=n
+
+# Custom partition table
+#CONFIG_PARTITION_TABLE_CUSTOM=y
+#CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+#CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
