@@ -87,7 +87,7 @@ fn main() -> anyhow::Result<()> {
 
             last_check_in_time = std::time::Instant::now();
         }
-        FreeRtos::delay_ms(50);
+        FreeRtos::delay_ms(100);
     }
 
     // Cleanup before exit
