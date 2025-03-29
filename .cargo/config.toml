@@ -13,4 +13,5 @@ build-std = ["std", "panic_abort"]
 MCU="esp32s3"
 # Note: this variable is not used by the pio builder (`cargo build --features pio`)
 ESP_IDF_VERSION = "v5.2.3"
-
+ESP_PARTITION_TABLE_CSV = { value = "${CARGO_MANIFEST_DIR}/partitions.csv" }
+PARTITION_TABLE_CSV = { value = "${CARGO_MANIFEST_DIR}/partitions.csv" }
