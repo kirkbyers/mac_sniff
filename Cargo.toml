@@ -35,7 +35,6 @@ anyhow = "1.0.97"
 embedded-graphics = "0.8"
 ssd1306 = "0.8"
 display-interface = "0.4"
-embedded-hal = "0.2"
 
 [build-dependencies]
 embuild = "0.33"

@@ -32,7 +32,10 @@ fn main() -> anyhow::Result<()> {
     info!("Setting up I2C for display using GPIO17(SDA) and GPIO18(SCL)");
 
     let i2c_config = esp_idf_hal::i2c::I2cConfig::new()
-        .baudrate(DISPLAY_I2C_FREQ.Hz().into());
+        .baudrate(DISPLAY_I2C_FREQ.Hz().into())
+        .sda_enable_pullup(true)
+        .scl_enable_pullup(true)
+        .timeout(APBTickType::from(Duration::from_millis(100)));
     let mut i2c = esp_idf_hal::i2c::I2cDriver::new(
         peripherals.i2c0, 
         peripherals.pins.gpio17,  // SDA_OLED
@@ -43,29 +46,25 @@ fn main() -> anyhow::Result<()> {
     info!("Configuring OLED reset pin on GPIO21");
     let reset_pin = PinDriver::output(peripherals.pins.gpio21)?;
 
-    // scanning to detect available devices
-    info!("Scanning I2C bus for devices...");
-    for address in 0..=127 {
-        let mut buf = [0u8; 1];
-        match i2c.read(address, &mut buf, 1000) {
-            Ok(_) => info!("Found I2C device at address: 0x{:02X}", address),
-            Err(_) => {} // No device at this address
-        }
-    }
-
     // Initialize display
     info!("Initializing display");
     let mut display = Display::new(i2c, reset_pin)?;
     
     // Clear display
     display.clear()?;
+    info!("Flushing 1");
+    display.flush()?;
     
     // Draw demo content
     display.draw_text(10, 10, "Hello from Rust!", true)?;
     display.draw_text(10, 25, "Detecting WiFi...", true)?;
+    display.draw_rect(0, 0, 128, 64, true)?;
+    FreeRtos::delay_ms(1000);
     
     // Update display
+    info!("Flushing 2");
     display.flush()?;
+    FreeRtos::delay_ms(1000);
 
     let basic_client_config = ClientConfiguration {
         ssid: "".try_into().unwrap(),
@@ -146,14 +145,4 @@ fn main() -> anyhow::Result<()> {
     info!("{} seconds elapsed, exiting...", DURRATION_U64);
 
     Ok(())
-}
-
-fn setup_i2c(i2c: impl Peripheral<P = impl I2c> + 'static, 
-             sda: impl Peripheral<P = impl OutputPin + InputPin> + 'static,
-             scl: impl Peripheral<P = impl OutputPin + InputPin> + 'static) -> anyhow::Result<I2cDriver<'static>> {
-    
-    let config = I2cConfig::new().baudrate(500.kHz().into());
-    let i2c = I2cDriver::new(i2c, sda, scl, &config)?;
-    
-    Ok(i2c)
 }
