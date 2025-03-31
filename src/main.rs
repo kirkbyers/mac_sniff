@@ -188,6 +188,11 @@ fn main() -> anyhow::Result<()> {
                 DURRATION_U64 - start.elapsed().as_secs(),
                 mac_map.len()
             );
+            // Update display with current status
+            clear_display(&mut display)?;
+            draw_text(&mut display, 10, 10, &format!("Time left: {}s", DURRATION_U64 - start.elapsed().as_secs()), true)?;
+            draw_text(&mut display, 10, 30, &format!("MACs found: {}", mac_map.len()), true)?;
+            flush_display(&mut display)?;
             last_check_in_time = std::time::Instant::now();
         }
         FreeRtos::delay_ms(100);
