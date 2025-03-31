@@ -1,6 +1,6 @@
 mod display;
 
-use std::{collections::HashMap, sync::{mpmc::Sender, mpsc}, time::Duration};
+use std::{collections::HashMap, sync::{mpsc, mpsc::Sender}, time::Duration};
 
 use display::{clear_display, draw_rect, draw_text, flush_display, AppDisplay, DISPLAY_ADDRESS, DISPLAY_I2C_FREQ};
 use esp_idf_hal::{gpio::{OutputPin, PinDriver}, i2c::{APBTickType, I2cDriver}, rmt::Receive};
@@ -97,12 +97,17 @@ fn main() -> anyhow::Result<()> {
 
     let mut wifi_driver = WifiDriver::new(peripherals.modem, sys_loop.clone(), Some(nvs))?;
 
-    // let mut mac_map: HashMap<string, bool> = HashMap::new();
-    // let (tx_mac_map, rx_mac_map): (Sender<String>, Receive<String>) = mpsc::channel();
+    let mut mac_map: HashMap<String, bool> = HashMap::new();
+    let (tx_mac_map, rx_mac_map): (mpsc::Sender<String>, mpsc::Receiver<String>) = mpsc::channel();
+    static mut TX: Option<Sender<String>> = None;
+
+    unsafe {
+        TX = Some(tx_mac_map.clone());
+    }
 
     unsafe extern "C" fn rx_callback(buf: *mut core::ffi::c_void, _type: u32) {
         if !buf.is_null() {
-            let frame_data = std::slice::from_raw_parts(buf as *const u8, 24); // Increased to 24 bytes to capture all MAC addresses
+            let frame_data = std::slice::from_raw_parts(buf as *const u8, 24);
             let frame_type = (frame_data[0] & 0x0C) >> 2;
             let frame_subtype = (frame_data[0] & 0xF0) >> 4;
             
@@ -117,8 +122,21 @@ fn main() -> anyhow::Result<()> {
             // Extract MAC addresses
             let destination_mac = &frame_data[4..10];
             let source_mac = &frame_data[10..16];
-            let bssid = &frame_data[16..22];
-    
+            
+            // Create MAC address strings with prefixes
+            let dst_mac_str = format!("dst_{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                destination_mac[0], destination_mac[1], destination_mac[2],
+                destination_mac[3], destination_mac[4], destination_mac[5]);
+            
+            let src_mac_str = format!("src_{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                source_mac[0], source_mac[1], source_mac[2],
+                source_mac[3], source_mac[4], source_mac[5]);
+            
+            if let Some(tx) = &TX {
+                let _ = tx.send(dst_mac_str);
+                let _ = tx.send(src_mac_str);
+            }
+            
             debug!("Frame: {} (type: {}, subtype: {})", type_str, frame_type, frame_subtype);
             debug!("  Destination: {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", 
                 destination_mac[0], destination_mac[1], destination_mac[2],
@@ -126,9 +144,6 @@ fn main() -> anyhow::Result<()> {
             debug!("  Source: {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
                 source_mac[0], source_mac[1], source_mac[2],
                 source_mac[3], source_mac[4], source_mac[5]);
-            debug!("  BSSID: {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-                bssid[0], bssid[1], bssid[2],
-                bssid[3], bssid[4], bssid[5]);
         }
     }
 
@@ -154,13 +169,37 @@ fn main() -> anyhow::Result<()> {
     let mut last_check_in_time = start;
 
     while start.elapsed() < duration {
-        if last_check_in_time.elapsed() >= std::time::Duration::from_secs(1) {
-            info!("Time remaining: {} seconds", DURRATION_U64 - start.elapsed().as_secs());
+        // Check for new MAC addresses
+        match rx_mac_map.try_recv() {
+            Ok(mac) => {
+                if !mac_map.contains_key(&mac) {
+                    mac_map.insert(mac, true);
+                }
+            },
+            Err(mpsc::TryRecvError::Empty) => {},
+            Err(mpsc::TryRecvError::Disconnected) => {
+                info!("Channel disconnected");
+                break;
+            }
+        }
 
+        if last_check_in_time.elapsed() >= std::time::Duration::from_secs(1) {
+            info!("Time remaining: {} seconds, Unique MACs: {}", 
+                DURRATION_U64 - start.elapsed().as_secs(),
+                mac_map.len()
+            );
             last_check_in_time = std::time::Instant::now();
         }
         FreeRtos::delay_ms(100);
     }
+
+    info!("Found {} unique MAC addresses", mac_map.len());
+
+    // Show final count on display
+    clear_display(&mut display)?;
+    draw_text(&mut display, 10, 10, &format!("Found {} MACs", mac_map.len()), true)?;
+    flush_display(&mut display)?;
+    FreeRtos::delay_ms(5000); // Show the result for 5 seconds
 
     // Cleanup before exit
     wifi_driver.set_promiscuous(false)?;
