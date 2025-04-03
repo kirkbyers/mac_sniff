@@ -1,9 +1,9 @@
 mod display;
 
-use std::{collections::HashMap, sync::{mpsc, mpsc::Sender}, time::Duration};
+use std::{collections::HashMap, sync::{mpsc, mpsc::SyncSender}, time::Duration};
 
 use display::{clear_display, draw_rect, draw_text, flush_display, DISPLAY_ADDRESS, DISPLAY_I2C_FREQ};
-use esp_idf_hal::{gpio::PinDriver, i2c::APBTickType};
+use esp_idf_hal::{gpio::PinDriver, i2c::APBTickType, sys::{esp_deep_sleep_start, esp_sleep_pd_config, esp_sleep_pd_domain_t_ESP_PD_DOMAIN_RTC_PERIPH, esp_sleep_pd_option_t_ESP_PD_OPTION_OFF}};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop, 
     hal::{delay::FreeRtos, prelude::{Peripherals, FromValueType}}, 
@@ -97,9 +97,10 @@ fn main() -> anyhow::Result<()> {
 
     let mut wifi_driver = WifiDriver::new(peripherals.modem, sys_loop.clone(), Some(nvs))?;
 
-    let mut mac_map: HashMap<String, bool> = HashMap::new();
-    let (tx_mac_map, rx_mac_map): (mpsc::Sender<String>, mpsc::Receiver<String>) = mpsc::channel();
-    static mut TX: Option<Sender<String>> = None;
+    type MacAddress = [u8; 6];
+    let mut mac_map: HashMap<MacAddress, bool> = HashMap::with_capacity(200);
+    let (tx_mac_map, rx_mac_map) = mpsc::sync_channel(100);
+    static mut TX: Option<SyncSender<MacAddress>> = None;
 
     unsafe {
         TX = Some(tx_mac_map.clone());
@@ -120,21 +121,12 @@ fn main() -> anyhow::Result<()> {
             };
     
             // Extract MAC addresses
-            let destination_mac = &frame_data[4..10];
-            let source_mac = &frame_data[10..16];
-            
-            // Create MAC address strings with prefixes
-            let dst_mac_str = format!("dst_{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-                destination_mac[0], destination_mac[1], destination_mac[2],
-                destination_mac[3], destination_mac[4], destination_mac[5]);
-            
-            let src_mac_str = format!("src_{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-                source_mac[0], source_mac[1], source_mac[2],
-                source_mac[3], source_mac[4], source_mac[5]);
+            let destination_mac = frame_data[4..10].try_into().unwrap();
+            let source_mac = frame_data[10..16].try_into().unwrap();
             
             if let Some(tx) = &TX {
-                let _ = tx.send(dst_mac_str);
-                let _ = tx.send(src_mac_str);
+                let _ = tx.send(destination_mac);
+                let _ = tx.send(source_mac);
             }
             
             debug!("Frame: {} (type: {}, subtype: {})", type_str, frame_type, frame_subtype);
@@ -181,7 +173,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
 
-        if last_check_in_time.elapsed() >= std::time::Duration::from_secs(1) {
+        if last_check_in_time.elapsed() >= std::time::Duration::from_secs(3) {
             info!("Time remaining: {} seconds, Unique MACs: {}", 
                 DURRATION_U64 - start.elapsed().as_secs(),
                 mac_map.len()
@@ -203,11 +195,10 @@ fn main() -> anyhow::Result<()> {
     draw_text(&mut display, 10, 10, &format!("Found {} MACs", mac_map.len()), true)?;
     flush_display(&mut display)?;
     FreeRtos::delay_ms(5000); // Show the result for 5 seconds
-
-    // Cleanup before exit
-    wifi_driver.set_promiscuous(false)?;
-    wifi_driver.stop()?;
+   
     info!("{} seconds elapsed, exiting...", DURRATION_U64);
 
-    Ok(())
+    unsafe {
+        esp_deep_sleep_start();
+    }
 }
