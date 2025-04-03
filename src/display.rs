@@ -1,6 +1,6 @@
 
 use esp_idf_hal::{
-    delay::FreeRtos, gpio::{OutputPin, PinDriver}, i2c::I2cDriver
+    delay::FreeRtos, i2c::I2cDriver
 };
 use embedded_graphics::{
     mono_font::{ascii::FONT_6X10, MonoTextStyleBuilder},
@@ -9,13 +9,12 @@ use embedded_graphics::{
     primitives::{PrimitiveStyle, Rectangle},
     text::{Baseline, Text},
 };
-use ssd1306::{mode::BufferedGraphicsMode, prelude::*, I2CDisplayInterface, Ssd1306};
+use ssd1306::{mode::BufferedGraphicsMode, prelude::*, Ssd1306};
 use anyhow::Result;
-use log::info;
 
 // Constants to match Arduino code
 pub const DISPLAY_ADDRESS: u8 = 0x3C;
-pub const DISPLAY_I2C_FREQ: u32 = 10_000; // 32 kHz
+pub const DISPLAY_I2C_FREQ: u32 = 10_000; // 10 kHz
 
 pub type AppDisplay = Ssd1306<I2CInterface<I2cDriver<'static>>, DisplaySize128x64, BufferedGraphicsMode<DisplaySize128x64>>;
 

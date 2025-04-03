@@ -2,8 +2,8 @@ mod display;
 
 use std::{collections::HashMap, sync::{mpsc, mpsc::Sender}, time::Duration};
 
-use display::{clear_display, draw_rect, draw_text, flush_display, AppDisplay, DISPLAY_ADDRESS, DISPLAY_I2C_FREQ};
-use esp_idf_hal::{gpio::{OutputPin, PinDriver}, i2c::{APBTickType, I2cDriver}, rmt::Receive};
+use display::{clear_display, draw_rect, draw_text, flush_display, DISPLAY_ADDRESS, DISPLAY_I2C_FREQ};
+use esp_idf_hal::{gpio::PinDriver, i2c::APBTickType};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop, 
     hal::{delay::FreeRtos, prelude::{Peripherals, FromValueType}}, 
@@ -33,11 +33,11 @@ fn main() -> anyhow::Result<()> {
     info!("Setting up I2C for display using GPIO17(SDA) and GPIO18(SCL)");
 
     let i2c_config = esp_idf_hal::i2c::I2cConfig::new()
-        .baudrate(DISPLAY_I2C_FREQ.Hz().into())
+        .baudrate(DISPLAY_I2C_FREQ.Hz())
         .sda_enable_pullup(true)
         .scl_enable_pullup(true)
         .timeout(APBTickType::from(Duration::from_millis(100)));
-    let mut i2c = esp_idf_hal::i2c::I2cDriver::new(
+    let i2c = esp_idf_hal::i2c::I2cDriver::new(
         peripherals.i2c0, 
         peripherals.pins.gpio17,  // SDA_OLED
         peripherals.pins.gpio18,  // SCL_OLED
@@ -172,9 +172,7 @@ fn main() -> anyhow::Result<()> {
         // Check for new MAC addresses
         match rx_mac_map.try_recv() {
             Ok(mac) => {
-                if !mac_map.contains_key(&mac) {
-                    mac_map.insert(mac, true);
-                }
+                mac_map.entry(mac).or_insert(true);
             },
             Err(mpsc::TryRecvError::Empty) => {},
             Err(mpsc::TryRecvError::Disconnected) => {
