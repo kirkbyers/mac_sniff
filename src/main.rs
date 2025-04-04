@@ -3,7 +3,7 @@ mod display;
 use std::{collections::HashMap, sync::{mpsc, mpsc::SyncSender}, time::Duration};
 
 use display::{clear_display, draw_rect, draw_text, flush_display, DISPLAY_ADDRESS, DISPLAY_I2C_FREQ};
-use esp_idf_hal::{gpio::PinDriver, i2c::APBTickType, sys::{esp_deep_sleep_start, esp_sleep_pd_config, esp_sleep_pd_domain_t_ESP_PD_DOMAIN_RTC_PERIPH, esp_sleep_pd_option_t_ESP_PD_OPTION_OFF}};
+use esp_idf_hal::{gpio::PinDriver, i2c::APBTickType, sys::esp_deep_sleep_start};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop, 
     hal::{delay::FreeRtos, prelude::{Peripherals, FromValueType}}, 
@@ -24,13 +24,13 @@ fn main() -> anyhow::Result<()> {
     // Bind the log crate to the ESP Logging facilities
     esp_idf_svc::log::EspLogger::initialize_default();
 
-    info!("Hello, world!");
+    debug!("Hello, world!");
 
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
 
-    info!("Setting up I2C for display using GPIO17(SDA) and GPIO18(SCL)");
+    debug!("Setting up I2C for display using GPIO17(SDA) and GPIO18(SCL)");
 
     let i2c_config = esp_idf_hal::i2c::I2cConfig::new()
         .baudrate(DISPLAY_I2C_FREQ.Hz())
@@ -44,12 +44,11 @@ fn main() -> anyhow::Result<()> {
         &i2c_config
     )?;
 
-    info!("Configuring OLED reset pin on GPIO21");
+    debug!("Configuring OLED reset pin on GPIO21");
     let mut reset_pin = PinDriver::output(peripherals.pins.gpio21)?;
 
     // Initialize display
-    info!("Initializing display");
-    info!("Performing display reset sequence");
+    debug!("Initializing display");
     // Reset sequence (matching typical OLED reset procedure)
     reset_pin.set_low()?;
     FreeRtos::delay_ms(10);
@@ -67,12 +66,10 @@ fn main() -> anyhow::Result<()> {
     ).into_buffered_graphics_mode();
 
     // Initialize with better error handling
-    info!("Initializing display");
     display.init().map_err(|e| anyhow::anyhow!("Failed to init display: {:?}", e))?;
     
     FreeRtos::delay_ms(1000);
 
-    info!("clearing");
     clear_display(&mut display)?;
     flush_display(&mut display)?;
     FreeRtos::delay_ms(1000);
@@ -82,7 +79,7 @@ fn main() -> anyhow::Result<()> {
     draw_text(&mut display, 10, 25, "Detecting WiFi...", true)?;
     draw_rect(&mut display, 0, 0, 128, 64, true)?;
     
-    info!("Flushing test text");
+    debug!("Flushing test text");
     flush_display(&mut display)?;
     FreeRtos::delay_ms(1000);
 
@@ -153,7 +150,7 @@ fn main() -> anyhow::Result<()> {
         esp_wifi_set_promiscuous_filter(&filter);
     }
 
-    info!("Wifi Started");
+    debug!("Wifi Started");
 
     // Run for 30 seconds then exit
     let start = std::time::Instant::now();
