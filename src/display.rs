@@ -9,6 +9,7 @@ use embedded_graphics::{
     primitives::{PrimitiveStyle, Rectangle},
     text::{Baseline, Text},
 };
+use log::debug;
 use ssd1306::{mode::BufferedGraphicsMode, prelude::*, Ssd1306};
 use anyhow::Result;
 
@@ -73,5 +74,42 @@ pub fn draw_text(display: &mut AppDisplay, x: i32, y: i32, text: &str, color: bo
 pub fn flush_display(display: &mut AppDisplay) -> Result<()> {
     display.flush().map_err(|e| anyhow::anyhow!("Failed to flush display: {:?}", e))?;
     FreeRtos::delay_ms(10);
+    Ok(())
+}
+
+pub fn draw_start_up(display: &mut AppDisplay) -> Result<()> {
+    clear_display(display)?;
+    flush_display(display)?;
+    FreeRtos::delay_ms(1000);
+
+    // Draw demo content
+    draw_text(display, 10, 10, "Hello from Rust!", true)?;
+    draw_text(display, 10, 25, "Detecting WiFi...", true)?;
+    draw_rect(display, 0, 0, 128, 64, true)?;
+    
+    debug!("Flushing test text");
+    flush_display(display)?;
+    FreeRtos::delay_ms(1000);
+
+    Ok(())
+}
+
+pub fn draw_status_update(display: &mut AppDisplay, durration: &u64, total_count: &usize) -> Result<()> {
+    // Update display with current status
+    clear_display(display)?;
+    draw_text(display, 10, 10, &format!("Time left: {}s", durration), true)?;
+    draw_text(display, 10, 30, &format!("MACs found: {}", total_count), true)?;
+    flush_display(display)?;
+
+    Ok(())
+}
+
+pub fn draw_final_count(display: &mut AppDisplay, count: &usize) -> Result<()> {
+    // Show final count on display
+    clear_display(display)?;
+    draw_text(display, 10, 10, &format!("Found {} MACs", count), true)?;
+    flush_display(display)?;
+    FreeRtos::delay_ms(5000); // Show the result for 5 seconds
+
     Ok(())
 }

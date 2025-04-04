@@ -3,7 +3,7 @@ mod wifi;
 
 use std::{collections::HashMap, sync::{mpsc, mpsc::SyncSender}, time::Duration};
 
-use display::{clear_display, draw_rect, draw_text, flush_display, DISPLAY_ADDRESS, DISPLAY_I2C_FREQ};
+use display::{clear_display, draw_final_count, draw_rect, draw_start_up, draw_status_update, draw_text, flush_display, DISPLAY_ADDRESS, DISPLAY_I2C_FREQ};
 use esp_idf_hal::{gpio::PinDriver, i2c::APBTickType, sys::{esp_deep_sleep_start, esp_wifi_set_promiscuous_rx_cb}};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop, 
@@ -70,18 +70,7 @@ fn main() -> anyhow::Result<()> {
     
     FreeRtos::delay_ms(1000);
 
-    clear_display(&mut display)?;
-    flush_display(&mut display)?;
-    FreeRtos::delay_ms(1000);
-
-    // Draw demo content
-    draw_text(&mut display, 10, 10, "Hello from Rust!", true)?;
-    draw_text(&mut display, 10, 25, "Detecting WiFi...", true)?;
-    draw_rect(&mut display, 0, 0, 128, 64, true)?;
-    
-    debug!("Flushing test text");
-    flush_display(&mut display)?;
-    FreeRtos::delay_ms(1000);
+    draw_start_up(&mut display)?;
 
     type MacAddress = [u8; 6];
     let mut mac_map: HashMap<MacAddress, bool> = HashMap::with_capacity(200);
@@ -121,7 +110,7 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    create_wifi_driver(peripherals.modem, sys_loop, nvs)?;
+    let wifi_driver = create_wifi_driver(peripherals.modem, sys_loop, nvs)?;
     unsafe {
         esp_wifi_set_promiscuous_rx_cb(Some(rx_callback));
     }
@@ -150,10 +139,7 @@ fn main() -> anyhow::Result<()> {
                 mac_map.len()
             );
             // Update display with current status
-            clear_display(&mut display)?;
-            draw_text(&mut display, 10, 10, &format!("Time left: {}s", DURRATION_U64 - start.elapsed().as_secs()), true)?;
-            draw_text(&mut display, 10, 30, &format!("MACs found: {}", mac_map.len()), true)?;
-            flush_display(&mut display)?;
+            draw_status_update(&mut display, &(DURRATION_U64 - start.elapsed().as_secs()), &mac_map.len())?;
             last_check_in_time = std::time::Instant::now();
         }
         FreeRtos::delay_ms(100);
@@ -161,11 +147,7 @@ fn main() -> anyhow::Result<()> {
 
     info!("Found {} unique MAC addresses", mac_map.len());
 
-    // Show final count on display
-    clear_display(&mut display)?;
-    draw_text(&mut display, 10, 10, &format!("Found {} MACs", mac_map.len()), true)?;
-    flush_display(&mut display)?;
-    FreeRtos::delay_ms(5000); // Show the result for 5 seconds
+    draw_final_count(&mut display, &mac_map.len())?;
    
     info!("{} seconds elapsed, exiting...", DURRATION_U64);
 
