@@ -1,18 +1,18 @@
 mod display;
+mod wifi;
 
 use std::{collections::HashMap, sync::{mpsc, mpsc::SyncSender}, time::Duration};
 
 use display::{clear_display, draw_rect, draw_text, flush_display, DISPLAY_ADDRESS, DISPLAY_I2C_FREQ};
-use esp_idf_hal::{gpio::PinDriver, i2c::APBTickType, sys::esp_deep_sleep_start};
+use esp_idf_hal::{gpio::PinDriver, i2c::APBTickType, sys::{esp_deep_sleep_start, esp_wifi_set_promiscuous_rx_cb}};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop, 
     hal::{delay::FreeRtos, prelude::{Peripherals, FromValueType}}, 
     nvs::EspDefaultNvsPartition, 
-    sys::{esp_wifi_set_mode, esp_wifi_set_promiscuous_filter, esp_wifi_set_promiscuous_rx_cb, wifi_mode_t_WIFI_MODE_NULL, wifi_promiscuous_filter_t, WIFI_PROMIS_FILTER_MASK_ALL},
-    wifi::{self, ClientConfiguration, WifiDriver}
 };
 use log::{debug, info};
 use ssd1306::{mode::DisplayConfig, prelude::DisplayRotation, size::DisplaySize128x64, I2CDisplayInterface, Ssd1306};
+use wifi::create_wifi_driver;
 
 const DURRATION_U64: u64 = 30;
 
@@ -83,17 +83,6 @@ fn main() -> anyhow::Result<()> {
     flush_display(&mut display)?;
     FreeRtos::delay_ms(1000);
 
-    let basic_client_config = ClientConfiguration {
-        ssid: "".try_into().unwrap(),
-        password: "".try_into().unwrap(),
-        channel: Some(1),  // Set to a specific channel
-        auth_method: wifi::AuthMethod::None,
-        ..Default::default()
-    };
-    let wifi_config = wifi::Configuration::Client(basic_client_config);
-
-    let mut wifi_driver = WifiDriver::new(peripherals.modem, sys_loop.clone(), Some(nvs))?;
-
     type MacAddress = [u8; 6];
     let mut mac_map: HashMap<MacAddress, bool> = HashMap::with_capacity(200);
     let (tx_mac_map, rx_mac_map) = mpsc::sync_channel(100);
@@ -127,30 +116,15 @@ fn main() -> anyhow::Result<()> {
             }
             
             debug!("Frame: {} (type: {}, subtype: {})", type_str, frame_type, frame_subtype);
-            debug!("  Destination: {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", 
-                destination_mac[0], destination_mac[1], destination_mac[2],
-                destination_mac[3], destination_mac[4], destination_mac[5]);
-            debug!("  Source: {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-                source_mac[0], source_mac[1], source_mac[2],
-                source_mac[3], source_mac[4], source_mac[5]);
+            debug!("  Destination: {:?}", destination_mac);
+            debug!("  Source: {:?}", source_mac);
         }
     }
 
-    wifi_driver.set_configuration(&wifi_config)?;
-    unsafe { 
-        esp_wifi_set_mode(wifi_mode_t_WIFI_MODE_NULL);
-    };
-    wifi_driver.start()?;
-    wifi_driver.set_promiscuous(true)?;
+    create_wifi_driver(peripherals.modem, sys_loop, nvs)?;
     unsafe {
         esp_wifi_set_promiscuous_rx_cb(Some(rx_callback));
-        let filter = wifi_promiscuous_filter_t {
-            filter_mask: WIFI_PROMIS_FILTER_MASK_ALL,
-        };
-        esp_wifi_set_promiscuous_filter(&filter);
     }
-
-    debug!("Wifi Started");
 
     // Run for 30 seconds then exit
     let start = std::time::Instant::now();
