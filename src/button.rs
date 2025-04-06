@@ -16,7 +16,7 @@ use esp_idf_svc::hal::delay::FreeRtos;
 const PRG_BUTTON_PIN: i32 = 0;
 
 // Long press duration in milliseconds
-const LONG_PRESS_DURATION_MS: u32 = 1250; // 1.25 second for long press
+const LONG_PRESS_DURATION_MS: u32 = 2000; // 1 second for long press
 
 // Button states
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -51,7 +51,7 @@ fn button_isr() {
         BUTTON_PRESSED.store(true, Ordering::SeqCst);
         BUTTON_RELEASED.store(false, Ordering::SeqCst);
         PRESS_START_TIME.store(current_time, Ordering::SeqCst);
-        log::info!("Button pressed at {} ms", current_time);
+        log::debug!("Button pressed at {} ms", current_time);
     } else {
         // Button was already pressed, so this must be a release
         BUTTON_RELEASED.store(true, Ordering::SeqCst);
@@ -61,7 +61,7 @@ fn button_isr() {
         let duration = current_time.saturating_sub(start_time);
         PRESS_DURATION.store(duration, Ordering::SeqCst);
         
-        log::info!("Button released, duration: {} ms", duration);
+        log::debug!("Button released, duration: {} ms", duration);
         
         // Reset pressed flag
         BUTTON_PRESSED.store(false, Ordering::SeqCst);

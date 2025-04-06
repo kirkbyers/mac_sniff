@@ -48,9 +48,6 @@ pub fn render_initial_menu(display: &mut AppDisplay) -> Result<()> {
             draw_text(display, 10, 25, "- Dump", true)?;
         },
     }
-    draw_text(display, 10, 40, "Tap to scroll.", true)?;
-    draw_text(display, 10, 50, "Long tap to select.", true)?;
-
     flush_display(display)?;
 
     FreeRtos::delay_ms(1000);

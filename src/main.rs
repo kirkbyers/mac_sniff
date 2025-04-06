@@ -72,18 +72,20 @@ fn main() -> anyhow::Result<()> {
     display.init().map_err(|e| anyhow::anyhow!("Failed to init display: {:?}", e))?;
     FreeRtos::delay_ms(1000);
     draw_start_up(&mut display)?;
-
+    render_initial_menu(&mut display)?;
     loop {
-        button::update_button_state(&button);
-        let button_state = check_button_event();
-
-        if button_state == ButtonEvent::LongPress {
-            clear_display(&mut display)?;
-            break;
-        }
         clear_display(&mut display)?;
-        update_initial_menu_state(&button_state)?;
-        render_initial_menu(&mut display)?;
+        button::update_button_state(&button);
+        match check_button_event() {
+            ButtonEvent::LongPress => {
+                break;
+            },
+            ButtonEvent::ShortPress => {
+                update_initial_menu_state(&ButtonEvent::ShortPress)?;
+                render_initial_menu(&mut display)?;
+            },
+            ButtonEvent::None => {}
+        }
         FreeRtos::delay_ms(100);
     }
 
