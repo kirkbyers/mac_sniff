@@ -1,8 +1,12 @@
 mod display;
 mod wifi;
+mod button;
+mod app;
 
 use std::{collections::HashMap, sync::{mpsc, mpsc::SyncSender}, time::Duration};
 
+use app::{render_initial_menu, update_initial_menu_state, InitMenuDisplayOptions, INIT_MENU_DISPLAY_STATE};
+use button::{check_button_event, ButtonEvent};
 use display::{clear_display, draw_final_count, draw_rect, draw_start_up, draw_status_update, draw_text, flush_display, DISPLAY_ADDRESS, DISPLAY_I2C_FREQ};
 use esp_idf_hal::{gpio::PinDriver, i2c::APBTickType, sys::{esp_deep_sleep_start, esp_wifi_set_promiscuous_rx_cb}};
 use esp_idf_svc::{
@@ -30,6 +34,9 @@ fn main() -> anyhow::Result<()> {
     let sys_loop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
 
+    info!("Setting up button");
+    let button = button::init_button(peripherals.pins.gpio0)?;
+
     debug!("Setting up I2C for display using GPIO17(SDA) and GPIO18(SCL)");
 
     let i2c_config = esp_idf_hal::i2c::I2cConfig::new()
@@ -48,109 +55,133 @@ fn main() -> anyhow::Result<()> {
     let mut reset_pin = PinDriver::output(peripherals.pins.gpio21)?;
 
     // Initialize display
+    // Display driver has to be created in main
+    // The Bus Lock gets lost (released?) at the end of the scope even on returned
     debug!("Initializing display");
     // Reset sequence (matching typical OLED reset procedure)
     reset_pin.set_low()?;
     FreeRtos::delay_ms(10);
     reset_pin.set_high()?;
     FreeRtos::delay_ms(1000);
-    
     let interface = I2CDisplayInterface::new_custom_address(i2c, DISPLAY_ADDRESS);
-    
-    // Display driver has to be created in main
-    // The Bus Lock gets lost at the end of the scope of creation
     let mut display = Ssd1306::new(
         interface,
         DisplaySize128x64,
         DisplayRotation::Rotate0,
     ).into_buffered_graphics_mode();
-
-    // Initialize with better error handling
     display.init().map_err(|e| anyhow::anyhow!("Failed to init display: {:?}", e))?;
-    
     FreeRtos::delay_ms(1000);
-
     draw_start_up(&mut display)?;
 
-    type MacAddress = [u8; 6];
-    let mut mac_map: HashMap<MacAddress, bool> = HashMap::with_capacity(200);
-    let (tx_mac_map, rx_mac_map) = mpsc::sync_channel(100);
-    static mut TX: Option<SyncSender<MacAddress>> = None;
+    loop {
+        button::update_button_state(&button);
+        let button_state = check_button_event();
 
-    unsafe {
-        TX = Some(tx_mac_map.clone());
-    }
-
-    unsafe extern "C" fn rx_callback(buf: *mut core::ffi::c_void, _type: u32) {
-        if !buf.is_null() {
-            let frame_data = std::slice::from_raw_parts(buf as *const u8, 24);
-            let frame_type = (frame_data[0] & 0x0C) >> 2;
-            let frame_subtype = (frame_data[0] & 0xF0) >> 4;
-            
-            let type_str = match frame_type {
-                0 => "Management",
-                1 => "Control",
-                2 => "Data",
-                3 => "Extension",
-                _ => "Unknown"
-            };
-    
-            // Extract MAC addresses
-            let destination_mac = frame_data[4..10].try_into().unwrap();
-            let source_mac = frame_data[10..16].try_into().unwrap();
-            
-            if let Some(tx) = &TX {
-                let _ = tx.send(destination_mac);
-                let _ = tx.send(source_mac);
-            }
-            
-            debug!("Frame: {} (type: {}, subtype: {})", type_str, frame_type, frame_subtype);
-            debug!("  Destination: {:?}", destination_mac);
-            debug!("  Source: {:?}", source_mac);
+        if button_state == ButtonEvent::LongPress {
+            clear_display(&mut display)?;
+            break;
         }
-    }
-
-    let wifi_driver = create_wifi_driver(peripherals.modem, sys_loop, nvs)?;
-    unsafe {
-        esp_wifi_set_promiscuous_rx_cb(Some(rx_callback));
-    }
-
-    // Run for 30 seconds then exit
-    let start = std::time::Instant::now();
-    let duration = std::time::Duration::from_secs(DURRATION_U64);
-    let mut last_check_in_time = start;
-
-    while start.elapsed() < duration {
-        // Check for new MAC addresses
-        match rx_mac_map.try_recv() {
-            Ok(mac) => {
-                mac_map.entry(mac).or_insert(true);
-            },
-            Err(mpsc::TryRecvError::Empty) => {},
-            Err(mpsc::TryRecvError::Disconnected) => {
-                info!("Channel disconnected");
-                break;
-            }
-        }
-
-        if last_check_in_time.elapsed() >= std::time::Duration::from_secs(3) {
-            info!("Time remaining: {} seconds, Unique MACs: {}", 
-                DURRATION_U64 - start.elapsed().as_secs(),
-                mac_map.len()
-            );
-            // Update display with current status
-            draw_status_update(&mut display, &(DURRATION_U64 - start.elapsed().as_secs()), &mac_map.len())?;
-            last_check_in_time = std::time::Instant::now();
-        }
+        clear_display(&mut display)?;
+        update_initial_menu_state(&button_state)?;
+        render_initial_menu(&mut display)?;
         FreeRtos::delay_ms(100);
     }
 
-    info!("Found {} unique MAC addresses", mac_map.len());
+    let init_menu_state = INIT_MENU_DISPLAY_STATE.lock().map_err(|e| { anyhow::anyhow!("Mutex poisoned: {:?}", e)})?;
 
-    draw_final_count(&mut display, &mac_map.len())?;
-   
-    info!("{} seconds elapsed, exiting...", DURRATION_U64);
+    match *init_menu_state {
+        InitMenuDisplayOptions::Scan => {
+            type MacAddress = [u8; 6];
+            let mut mac_map: HashMap<MacAddress, bool> = HashMap::with_capacity(200);
+            let (tx_mac_map, rx_mac_map) = mpsc::sync_channel(100);
+            static mut TX: Option<SyncSender<MacAddress>> = None;
 
+            unsafe {
+                TX = Some(tx_mac_map.clone());
+            }
+
+            unsafe extern "C" fn rx_callback(buf: *mut core::ffi::c_void, _type: u32) {
+                if !buf.is_null() {
+                    let frame_data = std::slice::from_raw_parts(buf as *const u8, 24);
+                    let frame_type = (frame_data[0] & 0x0C) >> 2;
+                    let frame_subtype = (frame_data[0] & 0xF0) >> 4;
+                    
+                    let type_str = match frame_type {
+                        0 => "Management",
+                        1 => "Control",
+                        2 => "Data",
+                        3 => "Extension",
+                        _ => "Unknown"
+                    };
+            
+                    // Extract MAC addresses
+                    let destination_mac = frame_data[4..10].try_into().unwrap();
+                    let source_mac = frame_data[10..16].try_into().unwrap();
+                    
+                    if let Some(tx) = &TX {
+                        let _ = tx.send(destination_mac);
+                        let _ = tx.send(source_mac);
+                    }
+                    
+                    debug!("Frame: {} (type: {}, subtype: {})", type_str, frame_type, frame_subtype);
+                    debug!("  Destination: {:?}", destination_mac);
+                    debug!("  Source: {:?}", source_mac);
+                }
+            }
+
+            let _wifi_driver = create_wifi_driver(peripherals.modem, sys_loop, nvs)?;
+            unsafe {
+                esp_wifi_set_promiscuous_rx_cb(Some(rx_callback));
+            }
+
+            // Run for 30 seconds then exit
+            let start = std::time::Instant::now();
+            let duration = std::time::Duration::from_secs(DURRATION_U64);
+            let mut last_check_in_time = start;
+
+            while start.elapsed() < duration {
+                // Update button state
+                button::update_button_state(&button);
+                // Check for new MAC addresses
+                match rx_mac_map.try_recv() {
+                    Ok(mac) => {
+                        mac_map.entry(mac).or_insert(true);
+                    },
+                    Err(mpsc::TryRecvError::Empty) => {},
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        info!("Channel disconnected");
+                        break;
+                    }
+                }
+
+                let button_event = button::check_button_event();
+                if last_check_in_time.elapsed() >= std::time::Duration::from_secs(3) {
+                    info!("Time remaining: {} seconds, Unique MACs: {}", 
+                        DURRATION_U64 - start.elapsed().as_secs(),
+                        mac_map.len()
+                    );
+                    // Update display with current status
+                    draw_status_update(&mut display, &(DURRATION_U64 - start.elapsed().as_secs()), &mac_map.len(), &button_event)?;
+                    last_check_in_time = std::time::Instant::now();
+                }
+                FreeRtos::delay_ms(100);
+            }
+
+            info!("Found {} unique MAC addresses", mac_map.len());
+
+            draw_final_count(&mut display, &mac_map.len())?;
+        
+            info!("{} seconds elapsed, exiting...", DURRATION_U64);
+
+        },
+        InitMenuDisplayOptions::Dump => {
+            draw_text(&mut display, 10, 10, "Dump not impl'd", true)?;
+            flush_display(&mut display)?;
+
+            FreeRtos::delay_ms(5000);
+        },
+    }
+    
     unsafe {
         esp_deep_sleep_start();
     }
