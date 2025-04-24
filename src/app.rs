@@ -48,21 +48,21 @@ pub fn render_initial_menu(display: &mut AppDisplay) -> Result<()> {
     draw_rect(display, 0, 0, 128, 64, true)?;
     match *state {
         InitMenuDisplayOptions::Scan => {
-            draw_text(display, 5, 5, "- Scan", true)?;
+            draw_text(display, 5, 5, "-Scan", true)?;
             draw_text(display, 5, 15, "Dump", true)?;
             draw_text(display, 5, 25, "Size", true)?;
             draw_text(display, 5, 35, "Exit", true)?;
         },
         InitMenuDisplayOptions::Dump => {
             draw_text(display, 5, 5, "Scan", true)?;
-            draw_text(display, 5, 15, "- Dump", true)?;
+            draw_text(display, 5, 15, "-Dump", true)?;
             draw_text(display, 5, 25, "Size", true)?;
             draw_text(display, 5, 35, "Exit", true)?;
         },
         InitMenuDisplayOptions::Size => {
             draw_text(display, 5, 5, "Scan", true)?;
             draw_text(display, 5, 15, "Dump", true)?;
-            draw_text(display, 5, 25, "- Size", true)?;
+            draw_text(display, 5, 25, "-Size", true)?;
             draw_text(display, 5, 35, "Exit", true)?;
         },
         InitMenuDisplayOptions::Exit => {
