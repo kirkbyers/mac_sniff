@@ -4,11 +4,11 @@ mod button;
 mod app;
 mod spiffs;
 
-use std::{collections::HashMap, fs, path::Path, sync::mpsc::{self, SyncSender}, time::Duration};
+use std::{collections::HashMap, sync::mpsc::{self, SyncSender}, time::Duration};
 
 use app::{render_initial_menu, update_initial_menu_state, InitMenuDisplayOptions, INIT_MENU_DISPLAY_STATE};
 use button::{check_button_event, ButtonEvent};
-use display::{clear_display, draw_final_count, draw_rect, draw_start_up, draw_status_update, draw_text, flush_display, DISPLAY_ADDRESS, DISPLAY_I2C_FREQ};
+use display::{clear_display, draw_final_count, draw_start_up, draw_status_update, draw_text, flush_display, DISPLAY_ADDRESS, DISPLAY_I2C_FREQ};
 use esp_idf_hal::{gpio::PinDriver, i2c::APBTickType, sys::{esp_deep_sleep_start, esp_wifi_set_promiscuous_rx_cb}};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop, 
@@ -16,7 +16,6 @@ use esp_idf_svc::{
     nvs::EspDefaultNvsPartition, 
 };
 use log::{debug, info, error};
-use spiffs::get_space_info;
 use ssd1306::{mode::DisplayConfig, prelude::DisplayRotation, size::DisplaySize128x64, I2CDisplayInterface, Ssd1306};
 use wifi::create_wifi_driver;
 
@@ -174,6 +173,43 @@ fn main() -> anyhow::Result<()> {
             info!("Found {} unique MAC addresses", mac_map.len());
 
             draw_final_count(&mut display, &mac_map.len())?;
+            
+            // Save MAC addresses to file if there's enough space
+            info!("Attempting to save MAC addresses to SPIFFS");
+            let mac_data: Vec<u8> = mac_map.keys()
+                .flat_map(|mac| mac.iter().copied())
+                .collect();
+            
+            spiffs::mount("/spffs")?;
+            
+            // Check if we have enough space to save the file
+            let needed_bytes = mac_data.len();
+            if spiffs::has_enough_space(needed_bytes)? {
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                
+                let filename = format!("/spffs/scan_{}.bin", timestamp);
+                match spiffs::save_to_file(&filename, &mac_data) {
+                    Ok(_) => {
+                        info!("Successfully saved {} MAC addresses to {}", mac_map.len(), filename);
+                        draw_text(&mut display, 5, 40, "MAC data saved", true)?;
+                        flush_display(&mut display)?;
+                    },
+                    Err(e) => {
+                        error!("Failed to save MAC addresses: {}", e);
+                        draw_text(&mut display, 5, 40, "Save failed", true)?;
+                        flush_display(&mut display)?;
+                    }
+                }
+            } else {
+                error!("Not enough space to save MAC addresses");
+                draw_text(&mut display, 5, 40, "Not enough space", true)?;
+                flush_display(&mut display)?;
+            }
+            
+            spiffs::unmount()?;
         
             info!("{} seconds elapsed, exiting...", DURRATION_U64);
 
@@ -183,10 +219,12 @@ fn main() -> anyhow::Result<()> {
             spiffs::mount(
                 "/spffs"
             )?;
-            let (total, used) = get_space_info()?;
+            let (total, used) = spiffs::get_space_info()?;
             draw_text(&mut display, 5, 5, &format!("Total: {} bytes", total), true)?;
             draw_text(&mut display, 5, 15, &format!("Used: {} bytes", used), true)?;
             flush_display(&mut display)?;
+
+            spiffs::unmount()?;
 
             FreeRtos::delay_ms(5000);
         },

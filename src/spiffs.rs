@@ -1,6 +1,8 @@
 use std::ptr::null;
 use std::ffi::CString;
 use log::{info, error};
+use std::fs::File;
+use std::io::Write;
 
 use esp_idf_hal::sys::{esp_vfs_spiffs_conf_t, esp_vfs_spiffs_register, esp_vfs_spiffs_unregister, ESP_OK, esp_spiffs_info};
 
@@ -54,4 +56,18 @@ pub fn get_space_info() -> anyhow::Result<(usize, usize)> {
     
     info!("SPIFFS info - total: {} bytes, used: {} bytes", total_bytes, used_bytes);
     Ok((total_bytes, used_bytes))
+}
+
+pub fn save_to_file(path: &str, data: &[u8]) -> anyhow::Result<()> {
+    let mut file = File::create(path)?;
+    file.write_all(data)?;
+    info!("Successfully wrote {} bytes to {}", data.len(), path);
+    Ok(())
+}
+
+pub fn has_enough_space(needed_bytes: usize) -> anyhow::Result<bool> {
+    let (total, used) = get_space_info()?;
+    let available = total - used;
+    info!("SPIFFS space check - available: {} bytes, needed: {} bytes", available, needed_bytes);
+    Ok(available >= needed_bytes)
 }
