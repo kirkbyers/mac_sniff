@@ -228,6 +228,8 @@ fn main() -> anyhow::Result<()> {
 
             FreeRtos::delay_ms(5000);
         },
+        InitMenuDisplayOptions::Dump => {},
+        InitMenuDisplayOptions::Exit => {}
     }
     
     unsafe {

@@ -9,7 +9,9 @@ use crate::{button::ButtonEvent, display::{draw_rect, draw_text, flush_display, 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InitMenuDisplayOptions {
     Scan,
+    Dump,
     Size,
+    Exit,
 }
 pub static INIT_MENU_DISPLAY_STATE: Mutex<InitMenuDisplayOptions> = Mutex::new(InitMenuDisplayOptions::Scan);
 
@@ -22,9 +24,15 @@ pub fn update_initial_menu_state(button_event: &ButtonEvent) -> Result<()> {
         ButtonEvent::ShortPress => {
             match *state {
                 InitMenuDisplayOptions::Scan => {
+                    *state = InitMenuDisplayOptions::Dump;
+                },
+                InitMenuDisplayOptions::Dump => {
                     *state = InitMenuDisplayOptions::Size;
                 },
                 InitMenuDisplayOptions::Size => {
+                    *state = InitMenuDisplayOptions::Exit;
+                },
+                InitMenuDisplayOptions::Exit => {
                     *state = InitMenuDisplayOptions::Scan;
                 },
             }
@@ -41,11 +49,27 @@ pub fn render_initial_menu(display: &mut AppDisplay) -> Result<()> {
     match *state {
         InitMenuDisplayOptions::Scan => {
             draw_text(display, 5, 5, "- Scan", true)?;
+            draw_text(display, 5, 15, "Dump", true)?;
             draw_text(display, 5, 25, "Size", true)?;
+            draw_text(display, 5, 35, "Exit", true)?;
+        },
+        InitMenuDisplayOptions::Dump => {
+            draw_text(display, 5, 5, "Scan", true)?;
+            draw_text(display, 5, 15, "- Dump", true)?;
+            draw_text(display, 5, 25, "Size", true)?;
+            draw_text(display, 5, 35, "Exit", true)?;
         },
         InitMenuDisplayOptions::Size => {
             draw_text(display, 5, 5, "Scan", true)?;
+            draw_text(display, 5, 15, "Dump", true)?;
             draw_text(display, 5, 25, "- Size", true)?;
+            draw_text(display, 5, 35, "Exit", true)?;
+        },
+        InitMenuDisplayOptions::Exit => {
+            draw_text(display, 5, 5, "Scan", true)?;
+            draw_text(display, 5, 15, "Dump", true)?;
+            draw_text(display, 5, 25, "Size", true)?;
+            draw_text(display, 5, 35, "-Exit", true)?;
         },
     }
     flush_display(display)?;
