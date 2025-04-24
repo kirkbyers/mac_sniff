@@ -2,8 +2,9 @@ mod display;
 mod wifi;
 mod button;
 mod app;
+mod spiffs;
 
-use std::{collections::HashMap, sync::{mpsc, mpsc::SyncSender}, time::Duration};
+use std::{collections::HashMap, fs, path::Path, sync::mpsc::{self, SyncSender}, time::Duration};
 
 use app::{render_initial_menu, update_initial_menu_state, InitMenuDisplayOptions, INIT_MENU_DISPLAY_STATE};
 use button::{check_button_event, ButtonEvent};
@@ -14,7 +15,8 @@ use esp_idf_svc::{
     hal::{delay::FreeRtos, prelude::{Peripherals, FromValueType}}, 
     nvs::EspDefaultNvsPartition, 
 };
-use log::{debug, info};
+use log::{debug, info, error};
+use spiffs::get_space_info;
 use ssd1306::{mode::DisplayConfig, prelude::DisplayRotation, size::DisplaySize128x64, I2CDisplayInterface, Ssd1306};
 use wifi::create_wifi_driver;
 
@@ -34,7 +36,7 @@ fn main() -> anyhow::Result<()> {
     let sys_loop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
 
-    info!("Setting up button");
+    debug!("Setting up button");
     let button = button::init_button(peripherals.pins.gpio0)?;
 
     debug!("Setting up I2C for display using GPIO17(SDA) and GPIO18(SCL)");
@@ -176,8 +178,14 @@ fn main() -> anyhow::Result<()> {
             info!("{} seconds elapsed, exiting...", DURRATION_U64);
 
         },
-        InitMenuDisplayOptions::Dump => {
-            draw_text(&mut display, 10, 10, "Dump not impl'd", true)?;
+        InitMenuDisplayOptions::Size => {
+            info!("Mounting SPIFFS filesystem");
+            spiffs::mount(
+                "/spffs"
+            )?;
+            let (total, used) = get_space_info()?;
+            draw_text(&mut display, 5, 5, &format!("Total: {} bytes", total), true)?;
+            draw_text(&mut display, 5, 15, &format!("Used: {} bytes", used), true)?;
             flush_display(&mut display)?;
 
             FreeRtos::delay_ms(5000);
