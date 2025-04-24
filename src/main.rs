@@ -228,7 +228,100 @@ fn main() -> anyhow::Result<()> {
 
             FreeRtos::delay_ms(5000);
         },
-        InitMenuDisplayOptions::Dump => {},
+        // ...existing code...
+        InitMenuDisplayOptions::Dump => {
+            info!("Starting SPIFFS dump to USB");
+            draw_text(&mut display, 5, 5, "Dumping files...", true)?;
+            flush_display(&mut display)?;
+            
+            // Mount filesystem
+            spiffs::mount("/spffs")?;
+            
+            // Get list of files
+            let files = match spiffs::list_files("/spffs") {
+                Ok(files) => files,
+                Err(e) => {
+                    error!("Failed to list files: {}", e);
+                    draw_text(&mut display, 5, 20, "Failed to list files", true)?;
+                    flush_display(&mut display)?;
+                    FreeRtos::delay_ms(3000);
+                    spiffs::unmount()?;
+                    return Ok(());
+                }
+            };
+            
+            if files.is_empty() {
+                draw_text(&mut display, 5, 20, "No files to dump", true)?;
+                flush_display(&mut display)?;
+                FreeRtos::delay_ms(3000);
+                spiffs::unmount()?;
+                return Ok(());
+            }
+            
+            // Show number of files found
+            draw_text(&mut display, 5, 20, &format!("Found {} files", files.len()), true)?;
+            flush_display(&mut display)?;
+            
+            // Start transfer protocol
+            println!("MAC_SNIFF_DUMP_BEGIN");
+            println!("NUM_FILES:{}", files.len());
+            
+            let mut total_bytes = 0;
+            
+            // Transfer each file
+            for (idx, file_path) in files.iter().enumerate() {
+                let content = match spiffs::read_file(file_path) {
+                    Ok(content) => content,
+                    Err(e) => {
+                        error!("Failed to read file {}: {}", file_path, e);
+                        continue;
+                    }
+                };
+                
+                // Update display
+                clear_display(&mut display)?;
+                draw_text(&mut display, 5, 5, "Dumping files...", true)?;
+                draw_text(&mut display, 5, 20, &format!("File {}/{}", idx+1, files.len()), true)?;
+                draw_text(&mut display, 5, 30, &format!("Size: {} bytes", content.len()), true)?;
+                flush_display(&mut display)?;
+                
+                // Send file header
+                println!("FILE_BEGIN:{}", file_path);
+                println!("FILE_SIZE:{}", content.len());
+                
+                // Send file content in chunks
+                const CHUNK_SIZE: usize = 64;
+                for chunk in content.chunks(CHUNK_SIZE) {
+                    // Convert binary chunk to hex string for reliable transfer
+                    let hex_chunk: String = chunk.iter()
+                        .map(|byte| format!("{:02x}", byte))
+                        .collect();
+                    println!("CHUNK:{}", hex_chunk);
+                    
+                    // Small delay to avoid overwhelming the serial buffer
+                    FreeRtos::delay_ms(5);
+                }
+                
+                println!("FILE_END");
+                total_bytes += content.len();
+            }
+            
+            // Transfer complete
+            println!("MAC_SNIFF_DUMP_END");
+            println!("TOTAL_BYTES:{}", total_bytes);
+            
+            clear_display(&mut display)?;
+            draw_text(&mut display, 5, 5, "Transfer complete", true)?;
+            draw_text(&mut display, 5, 20, &format!("Sent {} files", files.len()), true)?;
+            draw_text(&mut display, 5, 30, &format!("Total: {} bytes", total_bytes), true)?;
+            flush_display(&mut display)?;
+            
+            // Unmount filesystem
+            spiffs::unmount()?;
+            
+            // Wait for user to see the completion message
+            FreeRtos::delay_ms(5000);
+        },
         InitMenuDisplayOptions::Exit => {}
     }
     

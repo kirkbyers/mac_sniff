@@ -1,8 +1,9 @@
 use std::ptr::null;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use log::{info, error};
-use std::fs::File;
-use std::io::Write;
+use std::fs::{self, File};
+use std::io::{Write, Read};
+use std::path::Path;
 
 use esp_idf_hal::sys::{esp_vfs_spiffs_conf_t, esp_vfs_spiffs_register, esp_vfs_spiffs_unregister, ESP_OK, esp_spiffs_info};
 
@@ -70,4 +71,29 @@ pub fn has_enough_space(needed_bytes: usize) -> anyhow::Result<bool> {
     let available = total - used;
     info!("SPIFFS space check - available: {} bytes, needed: {} bytes", available, needed_bytes);
     Ok(available >= needed_bytes)
+}
+
+pub fn list_files(dir_path: &str) -> anyhow::Result<Vec<String>> {
+    let paths = fs::read_dir(dir_path)?;
+    
+    let mut files = Vec::new();
+    for path in paths {
+        let entry = path?;
+        let path = entry.path();
+        
+        if path.is_file() {
+            if let Some(path_str) = path.to_str() {
+                files.push(path_str.to_string());
+            }
+        }
+    }
+    
+    Ok(files)
+}
+
+pub fn read_file(file_path: &str) -> anyhow::Result<Vec<u8>> {
+    let mut file = File::open(file_path)?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
+    Ok(buffer)
 }
